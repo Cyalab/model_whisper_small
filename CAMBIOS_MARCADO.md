@@ -39,4 +39,4 @@ Al pasar el cursor sobre una marca automática se ve el motivo, el término suge
 - Que los radiólogos validen los sinónimos y abreviaturas del diccionario.
 - Ajustar el umbral del rojo con dictados reales: medir cuántas marcas automáticas corrigen los radiólogos.
 - La ayuda de la página mencionaba sugerencias desde `estadisticas.json`, pero el servidor no lo implementa. Se reemplazó ese texto.
-- Antes de usarse con dictados reales: hacer el repositorio privado, agregar acceso con usuario y guardar el ID del estudio de Aurora en cada expediente.
+- Este módulo funciona hoy de forma independiente, pero se integrará a Aurora. El acceso de usuarios y el ID del estudio los proveerá la plataforma Aurora al integrarse; por eso no se agregaron aquí.
