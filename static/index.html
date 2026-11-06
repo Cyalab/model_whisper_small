@@ -146,7 +146,10 @@
     <div class="ayuda">
       <b>Cómo marcar:</b> selecciona una palabra o frase y pulsa el botón del color.<br>
       <b>Corregir:</b> vuelve a seleccionarla y pulsa otro color, o <i>Quitar color</i>.<br>
-      <b>Colores tenues</b> = sugerencias automáticas del historial. Pulsa el chip para aplicarlas.
+      <b>Marcado automático:</b> al transcribir, el diccionario de cadera pinta los términos.
+      Verde = término del diccionario; amarillo = falta acento, sinónimo o abreviatura;
+      rojo = posible error de transcripción. Pasa el cursor sobre una marca para ver el término sugerido.
+      Si el diccionario se equivocó, corrige el color como siempre.
     </div>
 
     <button id="btnGuardar" class="primario" style="width:100%">Guardar dictado</button>
@@ -189,7 +192,8 @@ function escaparHTML(s) {
   return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /* ============================================================
@@ -232,7 +236,13 @@ function pintarMarcas(texto, marcas) {
     if (!libre) continue;
 
     for (let k = ini; k < fin; k++) ocupado[k] = true;
-    tramos.push({ inicio: ini, fin: fin, color: m.color });
+    let titulo = "";
+    if (m.origen === "auto") {
+      titulo = (m.motivo || "Marcado automático") +
+        (m.sugerencia ? " — sugerido: " + m.sugerencia : "") +
+        (m.rid ? " (" + m.rid + ")" : "");
+    }
+    tramos.push({ inicio: ini, fin: fin, color: m.color, titulo: titulo });
   }
 
   // Insertamos los spans de atrás hacia adelante para no descolocar índices.
@@ -241,7 +251,8 @@ function pintarMarcas(texto, marcas) {
   for (const t of tramos) {
     html =
       html.slice(0, t.inicio) +
-      '<span class="marca-' + t.color + '">' +
+      '<span class="marca-' + t.color + '"' +
+      (t.titulo ? ' title="' + escaparHTML(t.titulo) + '"' : "") + ">" +
       html.slice(t.inicio, t.fin) +
       "</span>" +
       html.slice(t.fin);
@@ -301,6 +312,7 @@ function aplicarColor(color) {
       color,
       inicio: sel.inicio,
       fin: sel.fin,
+      origen: "radiologo",
     });
   }
 
@@ -342,6 +354,10 @@ async function subirAudio(archivo) {
       color: m.color,
       inicio: m.inicio,
       fin: m.fin,
+      sugerencia: m.sugerencia || null,
+      motivo: m.motivo || null,
+      rid: m.rid || null,
+      origen: m.origen || "auto",
     }));
 
     renderizarEditor();

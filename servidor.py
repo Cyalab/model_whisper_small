@@ -5,6 +5,7 @@ import uuid
 import subprocess
 import tempfile
 import tracemalloc
+import unicodedata
 from pathlib import Path
 
 import torch
@@ -16,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from transformers import pipeline
 from datetime import datetime
+
+from marcado import marcar, version_diccionario
 
 # ── Configuración ────────────────────────────────────────────────
 MODELO = "openai/whisper-small"
@@ -139,6 +142,11 @@ class Marca(BaseModel):
     color: str = "verde"
     inicio: int = 0
     fin: int = 0
+    # Campos del marcado automático (opcionales en las marcas manuales)
+    sugerencia: str | None = None
+    motivo: str | None = None
+    rid: str | None = None
+    origen: str = "radiologo"   # "auto" si la puso el diccionario
 
 
 class GuardarRequest(BaseModel):
@@ -171,7 +179,9 @@ async def api_transcribir(audio: UploadFile = File(...)):
             os.unlink(wav_path)
 
     print(f"[RAM transcripción] {ram_mb} MB")
-    return {"texto": texto, "marcas": [], "duracion": duracion, "idioma": IDIOMA}
+    texto = unicodedata.normalize("NFC", texto)
+    return {"texto": texto, "marcas": marcar(texto), "duracion": duracion, "idioma": IDIOMA,
+            "version_diccionario": version_diccionario()}
 
 
 @app.post("/api/guardar")
@@ -183,7 +193,12 @@ async def api_guardar(datos: GuardarRequest):
         json.dumps(
             {
                 "texto": datos.texto,
+                # Marcas finales, después de la revisión del radiólogo
                 "marcas": [m.model_dump() for m in datos.marcas],
+                # Lo que propuso el diccionario, para comparar con la corrección
+                # del radiólogo (pares para el aprendizaje activo)
+                "marcas_automaticas": marcar(datos.texto),
+                "version_diccionario": version_diccionario(),
                 "fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
             },
             ensure_ascii=False,

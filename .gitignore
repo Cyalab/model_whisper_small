@@ -9,3 +9,6 @@ __pycache__/
 *.pt
 *.pth
 *.bin
+# Datos de dictados: nunca al repositorio
+expedientes/
+estadisticas.json
