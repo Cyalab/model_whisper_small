@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aurora Voz</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel2: #1e222b;
+    --borde: #2a2f3a;
+    --texto: #e6e8ee;
+    --tenue: #9aa3b2;
+    --acento: #4da3ff;
+    --verde: #2e9e5b;
+    --amarillo: #d8a020;
+    --rojo: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--texto);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  .contenedor { max-width: 900px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--tenue); font-size: .92rem; margin-bottom: 22px; }
+  .tarjeta {
+    background: var(--panel);
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  .tarjeta h2 { font-size: 1.05rem; margin: 0 0 12px; color: var(--acento); }
+  button {
+    font: inherit;
+    border: 1px solid var(--borde);
+    background: var(--panel2);
+    color: var(--texto);
+    padding: 9px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--acento); }
+  button.primario { background: var(--acento); color: #08111d; border-color: var(--acento); font-weight: 600; }
+  button.grabando { background: var(--rojo); border-color: var(--rojo); color: #fff; }
+  .fila { display: flex; gap: 10px; flex-wrap: wrap; }
+  .estado { color: var(--tenue); font-size: .88rem; margin-top: 10px; }
+  .estado.error { color: #ff8b7d; }
+  #editor {
+    background: var(--panel2);
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    padding: 14px;
+    min-height: 120px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 1rem;
+  }
+  #editor .placeholder { color: var(--tenue); font-style: italic; }
+  .marca-verde { background: rgba(46,158,91,.35); border-bottom: 2px solid var(--verde); }
+  .marca-amarillo { background: rgba(216,160,32,.35); border-bottom: 2px solid var(--amarillo); }
+  .marca-rojo { background: rgba(192,57,43,.35); border-bottom: 2px solid var(--rojo); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .chip {
+    border-radius: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--borde);
+    cursor: pointer;
+    font-size: .9rem;
+  }
+  .chip.verde { border-color: var(--verde); }
+  .chip.amarillo { border-color: var(--amarillo); }
+  .chip.rojo { border-color: var(--rojo); }
+  .chip.neutro { color: var(--tenue); }
+  .ayuda { color: var(--tenue); font-size: .84rem; margin: 8px 0 14px; }
+  .ayuda b { color: var(--texto); }
+
+  /* --- Expedientes: fila + acordeón --- */
+  .expediente {
+    background: var(--panel2);
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .exp-cabecera {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px;
+  }
+  .expediente .id { font-family: ui-monospace, monospace; }
+  .expediente .acciones { display: flex; gap: 8px; }
+  .expediente button { padding: 5px 12px; font-size: .85rem; }
+  .exp-detalle {
+    padding: 12px 14px;
+    background: #141b29;
+    border-top: 1px solid var(--borde);
+    border-left: 3px solid var(--acento);
+    font-size: .92rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .exp-detalle .etiqueta {
+    color: var(--acento);
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin: 0 0 4px;
+  }
+  .exp-detalle .bloque { margin-bottom: 12px; }
+  .exp-detalle .marcas-lista { margin: 0; padding-left: 18px; color: var(--tenue); }
+</style>
+</head>
+<body>
+<div class="contenedor">
+  <h1>Aurora Voz</h1>
+  <div class="sub">Transcripción con Whisper small y anotación de términos radiológicos.</div>
+
+  <!-- 1. Audio -->
+  <section class="tarjeta">
+    <h2>1. Audio</h2>
+    <div class="fila">
+      <button id="btnSubir" class="primario">Subir audio</button>
+      <button id="btnGrabar">Grabar en tiempo real</button>
+      <input type="file" id="inputAudio" accept="audio/*,.m4a,.wav,.mp3" hidden>
+    </div>
+    <div class="estado" id="estadoAudio">Sin audio cargado.</div>
+  </section>
+
+  <!-- 2. Transcripción y anotación -->
+  <section class="tarjeta">
+    <h2>2. Transcripción y anotación</h2>
+    <div id="editor"><span class="placeholder">Aquí aparecerá la transcripción.</span></div>
+
+    <div class="chips">
+      <button class="chip verde" data-color="verde">Correcto</button>
+      <button class="chip amarillo" data-color="amarillo">Falta acento/letra</button>
+      <button class="chip rojo" data-color="rojo">Mal</button>
+      <button class="chip neutro" data-color="ninguno">Quitar color</button>
+    </div>
+
+    <div class="ayuda">
+      <b>Cómo marcar:</b> selecciona una palabra o frase y pulsa el botón del color.<br>
+      <b>Corregir:</b> vuelve a seleccionarla y pulsa otro color, o <i>Quitar color</i>.<br>
+      <b>Colores tenues</b> = sugerencias automáticas del historial. Pulsa el chip para aplicarlas.
+    </div>
+
+    <button id="btnGuardar" class="primario" style="width:100%">Guardar dictado</button>
+    <div class="estado" id="estadoGuardar"></div>
+    <div class="ayuda">
+      <b>Aprendizaje activo:</b> cada dictado que guardas con marcas enseña al sistema.
+      Con el tiempo, las palabras que corriges se pre-resaltan solas (<code>estadisticas.json</code>).
+    </div>
+  </section>
+
+  <!-- 3. Expedientes -->
+  <section class="tarjeta">
+    <h2>Expedientes guardados</h2>
+    <div id="listaExpedientes"><div class="estado">Cargando…</div></div>
+  </section>
+</div>
+
+<script>
+/* ============================================================
+   Estado global
+   ============================================================ */
+const estado = {
+  textoActual: "",
+  marcas: [],        // { texto, color, inicio, fin } con posiciones en el TEXTO PLANO
+  expedienteAbierto: null,
+  grabadora: null,
+  trozos: [],
+  grabando: false,
+};
+
+const $ = (id) => document.getElementById(id);
+const editor = $("editor");
+const estadoAudio = $("estadoAudio");
+const estadoGuardar = $("estadoGuardar");
+
+/* ============================================================
+   Utilidades
+   ============================================================ */
+function escaparHTML(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/* ============================================================
+   pintarMarcas: reconstruye TODO el HTML desde el texto plano
+   usando las posiciones (inicio/fin) de cada marca.
+   Así las marcas se acumulan y nunca se pisan.
+   ============================================================ */
+const PRIORIDAD = { rojo: 3, amarillo: 2, verde: 1 };
+
+function pintarMarcas(texto, marcas) {
+  const esc = escaparHTML(texto);
+  if (!marcas || !marcas.length) return esc;
+
+  // Ordenamos: primero las de mayor prioridad, luego las más cortas (para que
+  // una palabra dentro de una frase marcada no rompa la frase).
+  const ordenadas = [...marcas].sort((a, b) => {
+    const p = (PRIORIDAD[b.color] || 0) - (PRIORIDAD[a.color] || 0);
+    if (p !== 0) return p;
+    return (b.fin - b.inicio) - (a.fin - a.inicio);
+  });
+
+  // Marcamos qué posiciones del texto plano ya están ocupadas.
+  const ocupado = new Array(texto.length).fill(false);
+  const tramos = [];
+
+  for (const m of ordenadas) {
+    const ini = Math.max(0, Math.floor(m.inicio));
+    const fin = Math.min(texto.length, Math.floor(m.fin));
+    if (fin <= ini) continue;
+
+    // Comprobamos que el texto coincide con lo guardado (por si cambió).
+    const frag = texto.slice(ini, fin);
+    if (frag !== m.texto) continue;
+
+    // Si ya está ocupado por una marca de mayor prioridad, lo saltamos.
+    let libre = true;
+    for (let k = ini; k < fin; k++) {
+      if (ocupado[k]) { libre = false; break; }
+    }
+    if (!libre) continue;
+
+    for (let k = ini; k < fin; k++) ocupado[k] = true;
+    tramos.push({ inicio: ini, fin: fin, color: m.color });
+  }
+
+  // Insertamos los spans de atrás hacia adelante para no descolocar índices.
+  tramos.sort((a, b) => b.inicio - a.inicio);
+  let html = esc;
+  for (const t of tramos) {
+    html =
+      html.slice(0, t.inicio) +
+      '<span class="marca-' + t.color + '">' +
+      html.slice(t.inicio, t.fin) +
+      "</span>" +
+      html.slice(t.fin);
+  }
+  return html;
+}
+
+function renderizarEditor() {
+  if (!estado.textoActual) {
+    editor.innerHTML = '<span class="placeholder">Aquí aparecerá la transcripción.</span>';
+    return;
+  }
+  editor.innerHTML = pintarMarcas(estado.textoActual, estado.marcas);
+}
+
+/* ============================================================
+   Selección de texto -> marcar / quitar color
+   Ahora calculamos la posición REAL (inicio/fin) dentro del
+   texto plano, para que las marcas no se pierdan ni se pisen.
+   ============================================================ */
+function obtenerSeleccion() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+
+  const rango = sel.getRangeAt(0);
+  if (!editor.contains(rango.commonAncestorContainer)) return null;
+
+  const texto = sel.toString().trim();
+  if (!texto) return null;
+
+  // Posición dentro del texto plano: creamos un rango desde el inicio
+  // del editor hasta el inicio de la selección.
+  const rangoInicio = document.createRange();
+  rangoInicio.selectNodeContents(editor);
+  rangoInicio.setEnd(rango.startContainer, rango.startOffset);
+  const inicio = rangoInicio.toString().length;
+
+  return { texto, inicio, fin: inicio + texto.length };
+}
+
+function aplicarColor(color) {
+  const sel = obtenerSeleccion();
+  if (!sel) {
+    estadoAudio.textContent = "Selecciona primero una palabra o frase en la transcripción.";
+    estadoAudio.className = "estado error";
+    return;
+  }
+
+  // Quitamos cualquier marca que se solape con la selección actual.
+  estado.marcas = estado.marcas.filter(
+    (m) => m.fin <= sel.inicio || m.inicio >= sel.fin
+  );
+
+  if (color !== "ninguno") {
+    estado.marcas.push({
+      texto: sel.texto,
+      color,
+      inicio: sel.inicio,
+      fin: sel.fin,
+    });
+  }
+
+  window.getSelection().removeAllRanges();
+  renderizarEditor();
+}
+
+document.querySelectorAll(".chip").forEach((chip) => {
+  chip.addEventListener("click", () => aplicarColor(chip.dataset.color));
+});
+
+/* ============================================================
+   Subir audio
+   ============================================================ */
+$("btnSubir").addEventListener("click", () => $("inputAudio").click());
+$("inputAudio").addEventListener("change", (e) => {
+  const archivo = e.target.files[0];
+  if (archivo) subirAudio(archivo);
+});
+
+async function subirAudio(archivo) {
+  estadoAudio.textContent = "⏳ Transcribiendo…";
+  estadoAudio.className = "estado";
+
+  const form = new FormData();
+  form.append("audio", archivo);
+
+  try {
+    const res = await fetch("/api/transcribir", { method: "POST", body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || ("Error " + res.status));
+    }
+    const datos = await res.json();
+
+    estado.textoActual = datos.texto || "";
+    estado.marcas = (datos.marcas || []).map((m) => ({
+      texto: m.texto,
+      color: m.color,
+      inicio: m.inicio,
+      fin: m.fin,
+    }));
+
+    renderizarEditor();
+
+    const dur = datos.duracion != null ? Number(datos.duracion).toFixed(2) : "?";
+    estadoAudio.textContent =
+      "Listo — " + dur + " s de audio, idioma: " + (datos.idioma || "es");
+    estadoAudio.className = "estado";
+  } catch (e) {
+    estadoAudio.textContent = "Error al transcribir: " + e.message;
+    estadoAudio.className = "estado error";
+  }
+}
+
+/* ============================================================
+   Grabación en tiempo real
+   ============================================================ */
+$("btnGrabar").addEventListener("click", async () => {
+  if (estado.grabando) {
+    detenerGrabacion();
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    estadoAudio.textContent = "Tu navegador no soporta grabación de audio.";
+    estadoAudio.className = "estado error";
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    estado.grabadora = new MediaRecorder(stream);
+    estado.trozos = [];
+
+    estado.grabadora.ondataavailable = (ev) => {
+      if (ev.data.size > 0) estado.trozos.push(ev.data);
+    };
+    estado.grabadora.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(estado.trozos, { type: "audio/webm" });
+      subirAudio(new File([blob], "grabacion.webm", { type: "audio/webm" }));
+    };
+
+    estado.grabadora.start();
+    estado.grabando = true;
+    $("btnGrabar").textContent = "Detener grabación";
+    $("btnGrabar").classList.add("grabando");
+    estadoAudio.textContent = "🔴 Grabando…";
+    estadoAudio.className = "estado";
+  } catch (e) {
+    estadoAudio.textContent = "No se pudo acceder al micrófono: " + e.message;
+    estadoAudio.className = "estado error";
+  }
+});
+
+function detenerGrabacion() {
+  if (estado.grabadora && estado.grabando) {
+    estado.grabadora.stop();
+    estado.grabando = false;
+    $("btnGrabar").textContent = "Grabar en tiempo real";
+    $("btnGrabar").classList.remove("grabando");
+    estadoAudio.textContent = "⏳ Procesando grabación…";
+  }
+}
+
+/* ============================================================
+   Guardar dictado
+   ============================================================ */
+$("btnGuardar").addEventListener("click", async () => {
+  if (!estado.textoActual) {
+    estadoGuardar.textContent = "No hay transcripción que guardar.";
+    estadoGuardar.className = "estado error";
+    return;
+  }
+  estadoGuardar.textContent = "⏳ Guardando…";
+  estadoGuardar.className = "estado";
+
+  const cuerpo = {
+    texto: estado.textoActual,
+    marcas: estado.marcas,
+  };
+
+  try {
+    const res = await fetch("/api/guardar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cuerpo),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || ("Error " + res.status));
+    }
+    const datos = await res.json();
+    const id = datos.id || "?";
+    estado.expedienteAbierto = id;
+    estadoGuardar.textContent = "Expediente " + id + " guardado.";
+    estadoGuardar.className = "estado";
+    cargarExpedientes();
+  } catch (e) {
+    estadoGuardar.textContent = "Error al guardar: " + e.message;
+    estadoGuardar.className = "estado error";
+  }
+});
+
+/* ============================================================
+   Expedientes guardados (con acordeón)
+   ============================================================ */
+async function cargarExpedientes() {
+  const cont = $("listaExpedientes");
+  try {
+    const res = await fetch("/api/expedientes");
+    if (!res.ok) throw new Error("Error " + res.status);
+    const lista = await res.json();
+
+    if (!lista.length) {
+      cont.innerHTML = '<div class="estado">Todavía no hay expedientes.</div>';
+      return;
+    }
+
+    cont.innerHTML = "";
+    lista.forEach((exp) => {
+      const id = exp.id;
+      const fila = document.createElement("div");
+      fila.className = "expediente";
+      fila.innerHTML =
+        '<div class="exp-cabecera">' +
+          '<span class="id">' + escaparHTML(id) + "</span>" +
+          '<span class="acciones">' +
+            '<button data-ver="' + escaparHTML(id) + '">Ver</button>' +
+            '<button data-borrar="' + escaparHTML(id) + '">Eliminar</button>' +
+          "</span>" +
+        "</div>" +
+        '<div class="exp-detalle" id="detalle-' + escaparHTML(id) + '" hidden></div>';
+      cont.appendChild(fila);
+    });
+
+    cont.querySelectorAll("[data-ver]").forEach((b) =>
+      b.addEventListener("click", () => toggleExpediente(b.dataset.ver))
+    );
+    cont.querySelectorAll("[data-borrar]").forEach((b) =>
+      b.addEventListener("click", () => eliminarExpediente(b.dataset.borrar))
+    );
+  } catch (e) {
+    cont.innerHTML =
+      '<div class="estado error">No se pudieron cargar los expedientes: ' + e.message + "</div>";
+  }
+}
+
+async function toggleExpediente(id) {
+  const cont = document.getElementById("detalle-" + id);
+  if (!cont) return;
+
+  if (!cont.hidden) {
+    cont.hidden = true;
+    cont.innerHTML = "";
+    return;
+  }
+
+  cont.hidden = false;
+  cont.innerHTML = '<div class="estado">Cargando expediente…</div>';
+
+  try {
+    const res = await fetch("/api/expedientes/" + encodeURIComponent(id));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || ("Error " + res.status));
+    }
+    const exp = await res.json();
+
+    const marcas = exp.marcas || [];
+    const listaMarcas = marcas.length
+      ? '<ul class="marcas-lista">' +
+        marcas
+          .map((m) => "<li>" + escaparHTML(m.texto || "(sin texto)") + " — " + escaparHTML(m.color || "") + "</li>")
+          .join("") +
+        "</ul>"
+      : '<div class="estado">Sin marcas.</div>';
+
+    cont.innerHTML =
+      '<div class="bloque">' +
+        '<p class="etiqueta">Transcripción</p>' +
+        '<div>' + pintarMarcas(exp.texto || "", marcas) + "</div>" +
+      "</div>" +
+      '<div class="bloque">' +
+        '<p class="etiqueta">Marcas (' + marcas.length + ")</p>" +
+        listaMarcas +
+      "</div>" +
+      '<div class="bloque">' +
+        '<p class="etiqueta">Fecha</p>' +
+        '<div>' + escaparHTML(exp.fecha || "—") + "</div>" +
+      "</div>";
+  } catch (e) {
+    cont.innerHTML = '<div class="estado error">Error al abrir el expediente: ' + e.message + "</div>";
+  }
+}
+
+async function eliminarExpediente(id) {
+  if (!confirm("¿Eliminar el expediente " + id + "?")) return;
+  try {
+    const res = await fetch("/api/expedientes/" + encodeURIComponent(id), { method: "DELETE" });
+    if (!res.ok) throw new Error("Error " + res.status);
+    cargarExpedientes();
+  } catch (e) {
+    estadoGuardar.textContent = "Error al eliminar: " + e.message;
+    estadoGuardar.className = "estado error";
+  }
+}
+
+/* ============================================================
+   Arranque
+   ============================================================ */
+cargarExpedientes();
+</script>
+</body>
+</html>
