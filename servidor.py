@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 import soundfile as sf
 import uvicorn
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ from transformers import pipeline
 from datetime import datetime
 
 from marcado import marcar, version_diccionario
+from prellenado import comparar, prellenar, validar_confirmacion
 
 # ── Configuración ────────────────────────────────────────────────
 MODELO = "openai/whisper-small"
@@ -149,14 +150,24 @@ class Marca(BaseModel):
     origen: str = "radiologo"   # "auto" si la puso el diccionario
 
 
+class DecisionLado(BaseModel):
+    """Lado del estudio que eligió el radiólogo, con el motivo si DICOM y dictado no coinciden."""
+    eleccion: str | None = None
+    motivo: str | None = None
+    lado_dicom: str | None = None   # capturado a mano hasta que Aurora lo envíe desde el DICOM
+
+
 class GuardarRequest(BaseModel):
     texto: str
     marcas: list[Marca] = []
+    # Plantilla v0.4: lo que confirmó el radiólogo después del prellenado.
+    campos_confirmados: dict[str, str | None] = {}
+    lado_estudio: DecisionLado | None = None
 
 
 # ── Rutas ────────────────────────────────────────────────────────
 @app.post("/api/transcribir")
-async def api_transcribir(audio: UploadFile = File(...)):
+async def api_transcribir(audio: UploadFile = File(...), lado_dicom: str | None = Form(None)):
     contenido = await audio.read()
     sufijo = Path(audio.filename or "audio.wav").suffix or ".wav"
     with tempfile.NamedTemporaryFile(suffix=sufijo, delete=False) as tmp:
@@ -180,12 +191,42 @@ async def api_transcribir(audio: UploadFile = File(...)):
 
     print(f"[RAM transcripción] {ram_mb} MB")
     texto = unicodedata.normalize("NFC", texto)
-    return {"texto": texto, "marcas": marcar(texto), "duracion": duracion, "idioma": IDIOMA,
-            "version_diccionario": version_diccionario()}
+    marcas = marcar(texto)
+    try:
+        prellenado = prellenar(texto, marcas, lado_dicom)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"texto": texto, "marcas": marcas, "duracion": duracion, "idioma": IDIOMA,
+            "version_diccionario": version_diccionario(), "prellenado": prellenado}
+
+
+@app.post("/api/prellenar")
+async def api_prellenar(datos: dict):
+    """Recalcula el prellenado (por ejemplo, cuando el radiólogo captura el lado del DICOM)."""
+    try:
+        return prellenar(datos.get("texto", ""), None, datos.get("lado_dicom"))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
 
 @app.post("/api/guardar")
 async def api_guardar(datos: GuardarRequest):
+    # El prellenado se recalcula aquí, igual que las marcas automáticas: lo que se mide es
+    # lo que propuso el sistema, no lo que mande el navegador.
+    decision = datos.lado_estudio.model_dump() if datos.lado_estudio else None
+    try:
+        prellenado = prellenar(datos.texto, None, (decision or {}).get("lado_dicom"))
+        validar_confirmacion(datos.campos_confirmados, decision, prellenado)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    plantilla = None
+    if datos.campos_confirmados or decision:
+        plantilla = {
+            "campos_prellenados": prellenado,
+            "campos_confirmados": datos.campos_confirmados,
+            "diferencias": comparar(prellenado, datos.campos_confirmados),
+            "lado_estudio": {**prellenado["lado_estudio"], "decision": decision},
+        }
     exp_id = f"{uuid.uuid4().hex[:8]}"
     carpeta = CARPETA_EXPEDIENTES / exp_id
     carpeta.mkdir(parents=True, exist_ok=True)
@@ -199,6 +240,8 @@ async def api_guardar(datos: GuardarRequest):
                 # del radiólogo (pares para el aprendizaje activo)
                 "marcas_automaticas": marcar(datos.texto),
                 "version_diccionario": version_diccionario(),
+                # Plantilla v0.4: prellenado, confirmación, diferencias y lado del estudio
+                "plantilla": plantilla,
                 "fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
             },
             ensure_ascii=False,

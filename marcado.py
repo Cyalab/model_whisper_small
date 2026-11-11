@@ -93,6 +93,8 @@ class Marcador:
                 "texto": texto[i:j], "color": color, "inicio": i, "fin": j,
                 "sugerencia": sugerencia, "motivo": motivo,
                 "rid": e.get("rid"), "origen": "auto",
+                # Término oficial y categoría del diccionario: los usa el prellenado.
+                "termino": e["termino"], "categoria": e["categoria"],
             })
 
         for patron, forma, tipo, e in self._patrones:

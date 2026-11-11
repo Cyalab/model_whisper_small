@@ -113,6 +113,20 @@
   }
   .exp-detalle .bloque { margin-bottom: 12px; }
   .exp-detalle .marcas-lista { margin: 0; padding-left: 18px; color: var(--tenue); }
+  /* Plantilla prellenada (v0.4) */
+  .plantilla { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(160px, 1.2fr); gap: 8px 14px; align-items: start; }
+  .plantilla label { font-size: .9rem; padding-top: 6px; }
+  .plantilla select, .plantilla textarea, .lado-dicom select {
+    width: 100%; background: var(--panel2); color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 8px; padding: 6px 8px; font: inherit;
+  }
+  .plantilla .evid { grid-column: 2; color: var(--tenue); font-size: .78rem; margin-top: -4px; }
+  .plantilla .conflicto select { border-color: var(--amarillo); }
+  .plantilla .conflicto .evid { color: var(--amarillo); }
+  .lado-caja { border: 1px solid var(--borde); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+  .lado-caja.difieren { border-color: var(--rojo); }
+  .lado-dicom { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  @media (max-width: 560px) { .plantilla { grid-template-columns: 1fr; } .plantilla .evid { grid-column: 1; } }
 </style>
 </head>
 <body>
@@ -152,7 +166,35 @@
       Si el diccionario se equivocó, corrige el color como siempre.
     </div>
 
-    <button id="btnGuardar" class="primario" style="width:100%">Guardar dictado</button>
+    <!-- Plantilla v0.4 prellenada por el dictado -->
+    <div id="panelPlantilla" hidden>
+      <h2 style="margin-top:18px">Plantilla de informe estructurado (prellenada)</h2>
+      <div class="ayuda">
+        Aurora Voz propone los campos a partir del dictado; <b>tú confirmas o corriges</b>.
+        Debajo de cada campo se ve la frase que lo llenó. En amarillo: el dictado dice dos cosas
+        distintas; elige tú. Las reglas son provisionales (versión <span id="versionReglas"></span>).
+      </div>
+      <div class="lado-caja" id="ladoCaja">
+        <div class="lado-dicom">
+          <span>Lado en el DICOM:</span>
+          <select id="ladoDicom" style="max-width:180px">
+            <option value="">No se conoce</option>
+            <option>Izquierdo</option><option>Derecho</option><option>Bilateral</option><option>Sin lado</option>
+          </select>
+          <span class="ayuda" style="margin:0">(a mano hasta que Aurora lo envíe)</span>
+        </div>
+        <div class="plantilla">
+          <label for="ladoEstudio">Lado del estudio</label>
+          <select id="ladoEstudio"></select>
+          <div class="evid" id="ladoInfo"></div>
+          <label for="ladoMotivo" id="ladoMotivoEt" hidden>Motivo de tu elección</label>
+          <textarea id="ladoMotivo" rows="2" hidden placeholder="Ej. la etiqueta del DICOM está invertida"></textarea>
+        </div>
+      </div>
+      <div class="plantilla" id="camposPlantilla"></div>
+    </div>
+
+    <button id="btnGuardar" class="primario" style="width:100%; margin-top:16px">Guardar dictado</button>
     <div class="estado" id="estadoGuardar"></div>
     <div class="ayuda">
       <b>Aprendizaje activo:</b> cada dictado que guardas con marcas enseña al sistema.
@@ -175,6 +217,7 @@ const estado = {
   textoActual: "",
   marcas: [],        // { texto, color, inicio, fin } con posiciones en el TEXTO PLANO
   expedienteAbierto: null,
+  prellenado: null,  // propuesta de la plantilla v0.4 que devolvió el servidor
   grabadora: null,
   trozos: [],
   grabando: false,
@@ -361,6 +404,11 @@ async function subirAudio(archivo) {
     }));
 
     renderizarEditor();
+    $("ladoDicom").value = "";
+    $("ladoEstudio").value = "";
+    $("ladoEstudio").dataset.manual = "";
+    $("ladoMotivo").value = "";
+    renderizarPlantilla(datos.prellenado || null);
 
     const dur = datos.duracion != null ? Number(datos.duracion).toFixed(2) : "?";
     estadoAudio.textContent =
@@ -422,6 +470,81 @@ function detenerGrabacion() {
 }
 
 /* ============================================================
+   Plantilla prellenada (v0.4)
+   ============================================================ */
+function opciones(valores, elegido) {
+  return ['<option value="">—</option>'].concat(valores.map((v) =>
+    '<option' + (v === elegido ? ' selected' : '') + '>' + escaparHTML(v) + '</option>')).join("");
+}
+
+function pintarLado(le, valores) {
+  const sel = $("ladoEstudio");
+  // Lo que eligió el radiólogo se respeta. Si no ha elegido y DICOM y dictado no coinciden,
+  // la lista queda vacía: no se le empuja hacia ninguna de las dos fuentes.
+  const elegido = sel.dataset.manual === "1" ? sel.value : (le.propuesta || "");
+  sel.innerHTML = opciones(valores, elegido);
+  const txt = {
+    coinciden: "DICOM y dictado coinciden.",
+    difieren: "DICOM y dictado NO coinciden: elige el lado y escribe el motivo.",
+    solo_dicom: "Solo el DICOM indica el lado.",
+    solo_dictado: "Solo el dictado indica el lado.",
+    ninguno: "Ni el DICOM ni el dictado indican el lado: elígelo.",
+  }[le.estado];
+  $("ladoInfo").textContent = "DICOM: " + (le.dicom || "—") + " · Dictado: " + (le.dictado || "—") + ". " + txt;
+  $("ladoCaja").classList.toggle("difieren", le.estado === "difieren");
+  $("ladoMotivo").hidden = $("ladoMotivoEt").hidden = !le.requiere_motivo;
+}
+
+function renderizarPlantilla(p) {
+  estado.prellenado = p;
+  if (!p) { $("panelPlantilla").hidden = true; return; }
+  $("panelPlantilla").hidden = false;
+  $("versionReglas").textContent = p.version_reglas;
+  pintarLado(p.lado_estudio, p.valores["Lado del estudio"]);
+  const html = [];
+  Object.entries(p.campos).forEach(([campo, c], i) => {
+    const id = "campo" + i;
+    const evid = c.conflicto
+      ? "El dictado dice: " + c.conflicto.join(" o ") + ". Elige tú."
+      : (c.evidencia.length ? "«" + c.evidencia.map((e) => e.texto).join("», «") + "» · " + c.regla : "Sin propuesta del dictado.");
+    html.push('<div class="' + (c.conflicto ? "conflicto" : "") + '" style="display:contents">' +
+      '<label for="' + id + '">' + escaparHTML(campo) + '</label>' +
+      '<select id="' + id + '" data-campo="' + escaparHTML(campo) + '">' + opciones(p.valores[campo], c.valor || "") + '</select>' +
+      '<div class="evid">' + escaparHTML(evid) + '</div></div>');
+  });
+  $("camposPlantilla").innerHTML = html.join("");
+}
+
+$("ladoEstudio").addEventListener("change", () => { $("ladoEstudio").dataset.manual = "1"; });
+
+$("ladoDicom").addEventListener("change", async () => {
+  if (!estado.textoActual) return;
+  const res = await fetch("/api/prellenar", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ texto: estado.textoActual, lado_dicom: $("ladoDicom").value || null }),
+  });
+  if (res.ok) {
+    const p = await res.json();
+    estado.prellenado.lado_estudio = p.lado_estudio;
+    pintarLado(p.lado_estudio, p.valores["Lado del estudio"]);
+  }
+});
+
+function plantillaConfirmada() {
+  if (!estado.prellenado) return {};
+  const campos = {};
+  document.querySelectorAll("#camposPlantilla select").forEach((s) => { campos[s.dataset.campo] = s.value || null; });
+  return {
+    campos_confirmados: campos,
+    lado_estudio: {
+      eleccion: $("ladoEstudio").value || null,
+      motivo: $("ladoMotivo").hidden ? null : ($("ladoMotivo").value.trim() || null),
+      lado_dicom: $("ladoDicom").value || null,
+    },
+  };
+}
+
+/* ============================================================
    Guardar dictado
    ============================================================ */
 $("btnGuardar").addEventListener("click", async () => {
@@ -433,9 +556,15 @@ $("btnGuardar").addEventListener("click", async () => {
   estadoGuardar.textContent = "⏳ Guardando…";
   estadoGuardar.className = "estado";
 
+  if (estado.prellenado && estado.prellenado.lado_estudio.requiere_motivo && !$("ladoMotivo").value.trim()) {
+    estadoGuardar.textContent = "El DICOM y el dictado no coinciden en el lado: escribe el motivo de tu elección.";
+    estadoGuardar.className = "estado error";
+    return;
+  }
   const cuerpo = {
     texto: estado.textoActual,
     marcas: estado.marcas,
+    ...plantillaConfirmada(),
   };
 
   try {
