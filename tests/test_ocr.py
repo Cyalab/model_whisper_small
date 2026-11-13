@@ -56,14 +56,14 @@ def test_peticion_a_ollama():
     srv, url = _servidor()
     try:
         _FalsoOllama.respuesta, _FalsoOllama.estado = NOTA, 200
-        r = ocr.leer_nota(_png(), modelo="qwen3-vl:2b", url=url)
+        r = ocr.leer_nota(_png(), modelo="qwen3-vl:2b-instruct", url=url)
         c = _FalsoOllama.recibido["cuerpo"]
         assert _FalsoOllama.recibido["ruta"] == "/api/chat"
-        assert c["model"] == "qwen3-vl:2b" and c["stream"] is False
+        assert c["model"] == "qwen3-vl:2b-instruct" and c["stream"] is False
         assert c["options"]["temperature"] == 0
         assert c["think"] is False and c["options"]["num_predict"] == ocr.MAX_TOKENS
         assert len(c["messages"][0]["images"]) == 1
-        assert r["texto"] == NOTA and r["modelo"] == "qwen3-vl:2b" and r["ilegibles"] == 0
+        assert r["texto"] == NOTA and r["modelo"] == "qwen3-vl:2b-instruct" and r["ilegibles"] == 0
     finally:
         srv.shutdown()
 
@@ -79,10 +79,12 @@ def test_solo_procesador():
     srv, url = _servidor()
     try:
         _FalsoOllama.respuesta, _FalsoOllama.estado = NOTA, 200
-        ocr.leer_nota(_png(), url=url, capas_gpu=0)
+        ocr.leer_nota(_png(), url=url)          # por omisión: solo procesador
         assert _FalsoOllama.recibido["cuerpo"]["options"]["num_gpu"] == 0
-        ocr.leer_nota(_png(), url=url)          # sin indicar: decide Ollama
+        ocr.leer_nota(_png(), url=url, capas_gpu="auto")   # la tarjeta la decide Ollama
         assert "num_gpu" not in _FalsoOllama.recibido["cuerpo"]["options"]
+        ocr.leer_nota(_png(), url=url, capas_gpu=99)
+        assert _FalsoOllama.recibido["cuerpo"]["options"]["num_gpu"] == 99
     finally:
         srv.shutdown()
 

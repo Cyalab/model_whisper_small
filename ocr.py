@@ -1,7 +1,7 @@
 """OCR de notas manuscritas para Aurora Voz.
 
 Lee la foto de una nota escrita a mano con un modelo de visión-lenguaje que corre en local
-con Ollama (por omisión, Qwen3-VL 2B, que cabe en una tarjeta de 4 GB). El texto leído
+con Ollama (por omisión, Qwen3-VL 2B instruct, en el procesador). El texto leído
 entra al mismo camino que un dictado: marcado con el diccionario de cadera, prellenado de
 la plantilla v0.4 y confirmación del radiólogo.
 
@@ -11,7 +11,7 @@ detección de datos identificables todavía NO está implementada (ver CAMBIOS_O
 
 Uso desde la terminal, sin el servidor ni Whisper:
     python ocr.py nota.jpg
-    python ocr.py nota.jpg --modelo qwen2.5vl:3b --lado-dicom Izquierdo
+    python ocr.py nota.jpg --modelo qwen2.5vl:3b --gpu --lado-dicom Izquierdo
 """
 from __future__ import annotations
 
@@ -31,14 +31,16 @@ from marcado import marcar, version_diccionario
 from prellenado import prellenar
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-MODELO_OCR = os.environ.get("AURORA_VOZ_OCR_MODELO", "qwen3-vl:2b")
+# Variante "instruct": la de por omisión (qwen3-vl:2b) razona antes de responder, ignora
+# think=false y agota el tope de tokens sin dar la transcripción.
+MODELO_OCR = os.environ.get("AURORA_VOZ_OCR_MODELO", "qwen3-vl:2b-instruct")
 # Las fotos de celular se reducen: menos memoria y menos trabajo para la tarjeta gráfica.
 LADO_MAXIMO_PX = int(os.environ.get("AURORA_VOZ_OCR_LADO_PX", "1280"))
-# Capas del modelo en la tarjeta gráfica: vacío = las que decida Ollama; 0 = todo en el
-# procesador. En tarjetas chicas que también dibujan la pantalla (p. ej. Quadro M1200),
-# Windows corta las operaciones largas de la tarjeta ("CUDA error: the launch timed out"):
-# con 0 se evita, a cambio de leer más lento.
-CAPAS_GPU = os.environ.get("AURORA_VOZ_OCR_CAPAS_GPU", "")
+# Capas del modelo en la tarjeta gráfica. Por omisión 0: todo en el procesador. En tarjetas
+# chicas que también dibujan la pantalla (p. ej. Quadro M1200), Windows corta las operaciones
+# largas de la tarjeta ("CUDA error: the launch timed out"); y con el modelo de 2B ya cargado,
+# el procesador lee una nota en ~3 s. "auto" deja que Ollama use la tarjeta (RTX 3060, 5080).
+CAPAS_GPU = os.environ.get("AURORA_VOZ_OCR_CAPAS_GPU", "0")
 TIEMPO_LIMITE_S = 600      # en CPU o en una tarjeta chica la primera lectura puede tardar
 MARCA_ILEGIBLE = "[ilegible]"
 
@@ -80,8 +82,8 @@ MAX_TOKENS = int(os.environ.get("AURORA_VOZ_OCR_MAX_TOKENS", "512"))  # una nota
 
 def _opciones(capas_gpu: str | int | None = None) -> dict:
     opciones = {"temperature": 0, "num_predict": MAX_TOKENS}
-    capas = CAPAS_GPU if capas_gpu is None else capas_gpu
-    if str(capas).strip() != "":
+    capas = str(CAPAS_GPU if capas_gpu is None else capas_gpu).strip().lower()
+    if capas not in ("", "auto"):
         opciones["num_gpu"] = int(capas)
     return opciones
 
@@ -111,8 +113,8 @@ def _llamar_ollama(imagen_b64: str, modelo: str, url: str, capas_gpu=None) -> st
                            f"ollama pull {modelo}") from e
         if "timed out" in detalle and "CUDA" in detalle:
             raise ErrorOCR("Windows cortó la tarjeta gráfica por tardar demasiado. Usa el "
-                           "procesador (AURORA_VOZ_OCR_CAPAS_GPU=0 o --cpu) o un equipo con "
-                           f"una tarjeta más grande. Detalle: {detalle}") from e
+                           "procesador (AURORA_VOZ_OCR_CAPAS_GPU=0, la opción por omisión) o "
+                           f"un equipo con una tarjeta más grande. Detalle: {detalle}") from e
         raise ErrorOCR(f"Ollama respondió {e.code}: {detalle}") from e
     except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
         raise ErrorOCR(f"No se pudo conectar con Ollama en {url}. ¿Está abierto? ({e})") from e
@@ -176,11 +178,16 @@ def _main() -> int:
     p.add_argument("--modelo", default=None, help=f"modelo de Ollama (por omisión {MODELO_OCR})")
     p.add_argument("--lado-dicom", default=None, help="Izquierdo, Derecho, Bilateral o Sin lado")
     p.add_argument("--url", default=None, help=f"dirección de Ollama (por omisión {OLLAMA_URL})")
-    p.add_argument("--cpu", action="store_true", help="leer solo con el procesador (sin tarjeta)")
+    p.add_argument("--gpu", action="store_true",
+                   help="dejar que Ollama use la tarjeta gráfica (por omisión, solo procesador)")
     a = p.parse_args()
     try:
+        sys.stdout.reconfigure(encoding="utf-8")   # acentos correctos en la consola de Windows
+    except (AttributeError, ValueError):
+        pass
+    try:
         with open(a.imagen, "rb") as f:
-            r = procesar_nota(f.read(), a.lado_dicom, a.modelo, a.url, 0 if a.cpu else None)
+            r = procesar_nota(f.read(), a.lado_dicom, a.modelo, a.url, "auto" if a.gpu else None)
     except (ErrorOCR, ValueError, OSError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
