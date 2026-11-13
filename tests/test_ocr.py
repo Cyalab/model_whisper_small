@@ -71,7 +71,19 @@ def test_reduce_fotos_grandes():
     from PIL import Image
     reducida = Image.open(io.BytesIO(ocr._reducir(_png(4000, 3000))))
     assert max(reducida.size) == ocr.LADO_MAXIMO_PX
-    assert reducida.size == (1600, 1200)
+    assert reducida.size == (ocr.LADO_MAXIMO_PX, ocr.LADO_MAXIMO_PX * 3 // 4)
+
+
+def test_solo_procesador():
+    srv, url = _servidor()
+    try:
+        _FalsoOllama.respuesta, _FalsoOllama.estado = NOTA, 200
+        ocr.leer_nota(_png(), url=url, capas_gpu=0)
+        assert _FalsoOllama.recibido["cuerpo"]["options"]["num_gpu"] == 0
+        ocr.leer_nota(_png(), url=url)          # sin indicar: decide Ollama
+        assert "num_gpu" not in _FalsoOllama.recibido["cuerpo"]["options"]
+    finally:
+        srv.shutdown()
 
 
 def test_limpia_lo_que_agrega_el_modelo():

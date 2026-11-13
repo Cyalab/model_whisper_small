@@ -32,7 +32,13 @@ from prellenado import prellenar
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 MODELO_OCR = os.environ.get("AURORA_VOZ_OCR_MODELO", "qwen3-vl:2b")
-LADO_MAXIMO_PX = 1600      # las fotos de celular se reducen: menos memoria y misma legibilidad
+# Las fotos de celular se reducen: menos memoria y menos trabajo para la tarjeta gráfica.
+LADO_MAXIMO_PX = int(os.environ.get("AURORA_VOZ_OCR_LADO_PX", "1280"))
+# Capas del modelo en la tarjeta gráfica: vacío = las que decida Ollama; 0 = todo en el
+# procesador. En tarjetas chicas que también dibujan la pantalla (p. ej. Quadro M1200),
+# Windows corta las operaciones largas de la tarjeta ("CUDA error: the launch timed out"):
+# con 0 se evita, a cambio de leer más lento.
+CAPAS_GPU = os.environ.get("AURORA_VOZ_OCR_CAPAS_GPU", "")
 TIEMPO_LIMITE_S = 600      # en CPU o en una tarjeta chica la primera lectura puede tardar
 MARCA_ILEGIBLE = "[ilegible]"
 
@@ -69,13 +75,21 @@ def _reducir(imagen: bytes) -> bytes:
         raise ErrorOCR(f"No se pudo abrir la imagen: {e}") from e
 
 
-def _llamar_ollama(imagen_b64: str, modelo: str, url: str) -> str:
+def _opciones(capas_gpu: str | int | None = None) -> dict:
+    opciones = {"temperature": 0}
+    capas = CAPAS_GPU if capas_gpu is None else capas_gpu
+    if str(capas).strip() != "":
+        opciones["num_gpu"] = int(capas)
+    return opciones
+
+
+def _llamar_ollama(imagen_b64: str, modelo: str, url: str, capas_gpu=None) -> str:
     """Pide la transcripción a Ollama (/api/chat) y devuelve el texto de la respuesta."""
     cuerpo = json.dumps({
         "model": modelo,
         "stream": False,
         "messages": [{"role": "user", "content": INSTRUCCION, "images": [imagen_b64]}],
-        "options": {"temperature": 0},
+        "options": _opciones(capas_gpu),
     }).encode("utf-8")
     peticion = urllib.request.Request(
         url.rstrip("/") + "/api/chat", data=cuerpo,
@@ -89,6 +103,10 @@ def _llamar_ollama(imagen_b64: str, modelo: str, url: str) -> str:
         if e.code == 404:
             raise ErrorOCR(f"El modelo {modelo} no está en Ollama. Descárgalo con: "
                            f"ollama pull {modelo}") from e
+        if "timed out" in detalle and "CUDA" in detalle:
+            raise ErrorOCR("Windows cortó la tarjeta gráfica por tardar demasiado. Usa el "
+                           "procesador (AURORA_VOZ_OCR_CAPAS_GPU=0 o --cpu) o un equipo con "
+                           f"una tarjeta más grande. Detalle: {detalle}") from e
         raise ErrorOCR(f"Ollama respondió {e.code}: {detalle}") from e
     except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
         raise ErrorOCR(f"No se pudo conectar con Ollama en {url}. ¿Está abierto? ({e})") from e
@@ -108,14 +126,15 @@ def limpiar(texto: str) -> str:
     return unicodedata.normalize("NFC", t.strip())
 
 
-def leer_nota(imagen: bytes, modelo: str | None = None, url: str | None = None) -> dict:
+def leer_nota(imagen: bytes, modelo: str | None = None, url: str | None = None,
+              capas_gpu=None) -> dict:
     """Transcribe la nota. Devuelve {texto, modelo, segundos, ilegibles}."""
     if not imagen:
         raise ErrorOCR("La imagen está vacía.")
     modelo = modelo or MODELO_OCR
     inicio = time.monotonic()
     crudo = _llamar_ollama(base64.b64encode(_reducir(imagen)).decode("ascii"),
-                           modelo, url or OLLAMA_URL)
+                           modelo, url or OLLAMA_URL, capas_gpu)
     texto = limpiar(crudo)
     if not texto:
         raise ErrorOCR("El modelo no devolvió texto. Prueba con una foto más nítida.")
@@ -128,9 +147,9 @@ def leer_nota(imagen: bytes, modelo: str | None = None, url: str | None = None) 
 
 
 def procesar_nota(imagen: bytes, lado_dicom: str | None = None,
-                  modelo: str | None = None, url: str | None = None) -> dict:
+                  modelo: str | None = None, url: str | None = None, capas_gpu=None) -> dict:
     """OCR + marcado + prellenado: la misma respuesta que /api/transcribir, con origen «nota»."""
-    lectura = leer_nota(imagen, modelo, url)
+    lectura = leer_nota(imagen, modelo, url, capas_gpu)
     marcas = marcar(lectura["texto"])
     return {
         "texto": lectura["texto"],
@@ -151,10 +170,11 @@ def _main() -> int:
     p.add_argument("--modelo", default=None, help=f"modelo de Ollama (por omisión {MODELO_OCR})")
     p.add_argument("--lado-dicom", default=None, help="Izquierdo, Derecho, Bilateral o Sin lado")
     p.add_argument("--url", default=None, help=f"dirección de Ollama (por omisión {OLLAMA_URL})")
+    p.add_argument("--cpu", action="store_true", help="leer solo con el procesador (sin tarjeta)")
     a = p.parse_args()
     try:
         with open(a.imagen, "rb") as f:
-            r = procesar_nota(f.read(), a.lado_dicom, a.modelo, a.url)
+            r = procesar_nota(f.read(), a.lado_dicom, a.modelo, a.url, 0 if a.cpu else None)
     except (ErrorOCR, ValueError, OSError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
