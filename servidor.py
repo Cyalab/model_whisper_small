@@ -20,6 +20,7 @@ from datetime import datetime
 
 from marcado import marcar, version_diccionario
 from prellenado import comparar, prellenar, validar_confirmacion
+from ocr import ErrorOCR, procesar_nota
 
 # ── Configuración ────────────────────────────────────────────────
 MODELO = "openai/whisper-small"
@@ -163,6 +164,9 @@ class GuardarRequest(BaseModel):
     # Plantilla v0.4: lo que confirmó el radiólogo después del prellenado.
     campos_confirmados: dict[str, str | None] = {}
     lado_estudio: DecisionLado | None = None
+    # De dónde salió el texto: "dictado" (Whisper) o "nota" (OCR de una nota manuscrita).
+    origen: str = "dictado"
+    modelo_ocr: str | None = None
 
 
 # ── Rutas ────────────────────────────────────────────────────────
@@ -200,6 +204,21 @@ async def api_transcribir(audio: UploadFile = File(...), lado_dicom: str | None 
             "version_diccionario": version_diccionario(), "prellenado": prellenado}
 
 
+@app.post("/api/ocr")
+async def api_ocr(imagen: UploadFile = File(...), lado_dicom: str | None = Form(None)):
+    """Lee una nota manuscrita con el modelo local de Ollama. La imagen solo vive en memoria:
+    no se guarda en disco."""
+    contenido = await imagen.read()
+    try:
+        resultado = procesar_nota(contenido, lado_dicom)
+    except ErrorOCR as e:
+        raise HTTPException(503, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    print(f"[OCR] {resultado['modelo_ocr']} · {resultado['segundos']} s")
+    return resultado
+
+
 @app.post("/api/prellenar")
 async def api_prellenar(datos: dict):
     """Recalcula el prellenado (por ejemplo, cuando el radiólogo captura el lado del DICOM)."""
@@ -234,6 +253,8 @@ async def api_guardar(datos: GuardarRequest):
         json.dumps(
             {
                 "texto": datos.texto,
+                "origen": datos.origen if datos.origen in ("dictado", "nota") else "dictado",
+                "modelo_ocr": datos.modelo_ocr if datos.origen == "nota" else None,
                 # Marcas finales, después de la revisión del radiólogo
                 "marcas": [m.model_dump() for m in datos.marcas],
                 # Lo que propuso el diccionario, para comparar con la corrección

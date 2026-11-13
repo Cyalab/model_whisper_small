@@ -136,13 +136,21 @@
 
   <!-- 1. Audio -->
   <section class="tarjeta">
-    <h2>1. Audio</h2>
+    <h2>1. Dictado o nota manuscrita</h2>
     <div class="fila">
       <button id="btnSubir" class="primario">Subir audio</button>
       <button id="btnGrabar">Grabar en tiempo real</button>
+      <button id="btnNota">Subir foto de nota</button>
       <input type="file" id="inputAudio" accept="audio/*,.m4a,.wav,.mp3" hidden>
+      <input type="file" id="inputNota" accept="image/*" hidden>
     </div>
-    <div class="estado" id="estadoAudio">Sin audio cargado.</div>
+    <div class="estado" id="estadoAudio">Sin audio ni nota cargados.</div>
+    <div class="ayuda">
+      <b>Nota manuscrita:</b> la foto se lee con un modelo que corre en este equipo y no se guarda.
+      Lo que no se pudo leer aparece como <code>[ilegible]</code>. Revisa el texto con cuidado:
+      el modelo puede equivocarse con la letra. <b>No subas notas con nombre del paciente</b>:
+      la detección de datos identificables aún no está implementada.
+    </div>
   </section>
 
   <!-- 2. Transcripción y anotación -->
@@ -218,6 +226,8 @@ const estado = {
   marcas: [],        // { texto, color, inicio, fin } con posiciones en el TEXTO PLANO
   expedienteAbierto: null,
   prellenado: null,  // propuesta de la plantilla v0.4 que devolvió el servidor
+  origen: "dictado", // "dictado" (Whisper) o "nota" (OCR)
+  modeloOcr: null,
   grabadora: null,
   trozos: [],
   grabando: false,
@@ -390,7 +400,21 @@ async function subirAudio(archivo) {
       throw new Error(err.detail || ("Error " + res.status));
     }
     const datos = await res.json();
+    mostrarResultado(datos, "dictado");
+    const dur = datos.duracion != null ? Number(datos.duracion).toFixed(2) : "?";
+    estadoAudio.textContent =
+      "Listo — " + dur + " s de audio, idioma: " + (datos.idioma || "es");
+    estadoAudio.className = "estado";
+  } catch (e) {
+    estadoAudio.textContent = "Error al transcribir: " + e.message;
+    estadoAudio.className = "estado error";
+  }
+}
 
+/* Pinta en el editor y en la plantilla lo que devolvió el servidor (dictado o nota). */
+function mostrarResultado(datos, origen) {
+    estado.origen = origen;
+    estado.modeloOcr = origen === "nota" ? (datos.modelo_ocr || null) : null;
     estado.textoActual = datos.texto || "";
     estado.marcas = (datos.marcas || []).map((m) => ({
       texto: m.texto,
@@ -409,13 +433,37 @@ async function subirAudio(archivo) {
     $("ladoEstudio").dataset.manual = "";
     $("ladoMotivo").value = "";
     renderizarPlantilla(datos.prellenado || null);
+}
 
-    const dur = datos.duracion != null ? Number(datos.duracion).toFixed(2) : "?";
-    estadoAudio.textContent =
-      "Listo — " + dur + " s de audio, idioma: " + (datos.idioma || "es");
-    estadoAudio.className = "estado";
+/* ============================================================
+   Subir foto de nota manuscrita (OCR local con Ollama)
+   ============================================================ */
+$("btnNota").addEventListener("click", () => $("inputNota").click());
+$("inputNota").addEventListener("change", (e) => {
+  const archivo = e.target.files[0];
+  e.target.value = "";
+  if (archivo) subirNota(archivo);
+});
+
+async function subirNota(archivo) {
+  estadoAudio.textContent = "⏳ Leyendo la nota… (la primera vez puede tardar mientras carga el modelo)";
+  estadoAudio.className = "estado";
+  const form = new FormData();
+  form.append("imagen", archivo);
+  try {
+    const res = await fetch("/api/ocr", { method: "POST", body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || ("Error " + res.status));
+    }
+    const datos = await res.json();
+    mostrarResultado(datos, "nota");
+    estadoAudio.textContent = "Nota leída con " + (datos.modelo_ocr || "?") + " en " +
+      Number(datos.segundos || 0).toFixed(1) + " s" +
+      (datos.ilegibles ? " — " + datos.ilegibles + " palabra(s) ilegible(s): revísalas." : ".");
+    estadoAudio.className = datos.ilegibles ? "estado error" : "estado";
   } catch (e) {
-    estadoAudio.textContent = "Error al transcribir: " + e.message;
+    estadoAudio.textContent = "Error al leer la nota: " + e.message;
     estadoAudio.className = "estado error";
   }
 }
@@ -564,6 +612,8 @@ $("btnGuardar").addEventListener("click", async () => {
   const cuerpo = {
     texto: estado.textoActual,
     marcas: estado.marcas,
+    origen: estado.origen,
+    modelo_ocr: estado.modeloOcr,
     ...plantillaConfirmada(),
   };
 

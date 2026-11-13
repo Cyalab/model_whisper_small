@@ -13,7 +13,7 @@ Módulo de voz de la plataforma **Aurora** (proyecto CBF-2025-I-3700). Hoy funci
 
 - **Formato de descripción de cadera** (v0.3): mismo vocabulario y mismos códigos RadLex que el diccionario.
 - **Ontología OCHM 31-B** (fracturas de cuello femoral, AO/OTA 2018): el diccionario usa sus grupos AO/OTA y su vocabulario de desplazamiento.
-- **Editor-corrector de Aurora Voz** (artículo «Aurora Voz: captura multimodal asistida por IA»): este repositorio implementa la captura por voz y el marcado automático; el OCR de notas manuscritas aún no está implementado.
+- **Editor-corrector de Aurora Voz** (artículo «Aurora Voz: captura multimodal asistida por IA»): este repositorio implementa la captura por voz, el marcado automático, el prellenado de la plantilla y el OCR local de notas manuscritas (rama `ocr-notas`, ver `CAMBIOS_OCR.md`).
 
 ## Estructura
 
@@ -21,6 +21,7 @@ Módulo de voz de la plataforma **Aurora** (proyecto CBF-2025-I-3700). Hoy funci
 |---|---|
 | `servidor.py` | Servidor FastAPI: `/api/transcribir`, `/api/guardar`, `/api/expedientes` |
 | `marcado.py` | Marcado automático con el diccionario |
+| `ocr.py` | OCR de notas manuscritas con un modelo local de Ollama (`CAMBIOS_OCR.md`) |
 | `diccionario/diccionario_cadera.json` | Términos, sinónimos, abreviaturas y códigos RadLex |
 | `static/index.html` | Editor web de transcripción y corrección |
 | `tests/test_marcado.py` | Pruebas del marcado |
