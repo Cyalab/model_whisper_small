@@ -5,7 +5,7 @@ Rama `ocr-notas`, sobre `prellenado-plantilla`. Pedido por la líder del proyect
 ## Qué hace
 
 1. En el editor, **Subir foto de nota** manda la imagen a `/api/ocr`.
-2. `ocr.py` reduce la foto a 1600 px por lado y se la pide a un **modelo de visión-lenguaje local con Ollama**. Por omisión es **Qwen3-VL 2B instruct** (`qwen3-vl:2b-instruct`, unos 2 GB) y corre **en el procesador**. No se usa `qwen3-vl:2b`: esa variante razona antes de responder, ignora `think: false` y agota el tope de tokens sin entregar la transcripción.
+2. `ocr.py` reduce la foto a 1280 px por lado y se la pide a un **modelo de visión-lenguaje local con Ollama**. Por omisión es **Qwen3-VL 2B instruct** (`qwen3-vl:2b-instruct`, unos 2 GB) y corre **en el procesador**. No se usa `qwen3-vl:2b`: esa variante razona antes de responder, ignora `think: false` y agota el tope de tokens sin entregar la transcripción.
 3. La instrucción pide transcribir **tal cual**: sin corregir, sin completar abreviaturas y sin interpretar. Lo que no se lee sale como `[ilegible]`.
 4. El texto entra al **mismo camino que un dictado**: marcado con el diccionario de cadera, prellenado de la plantilla v0.4 (reglas R1–R11) y confirmación del radiólogo.
 5. Al guardar, el expediente registra `origen: "nota"` y el `modelo_ocr` usado, para medir por separado el dictado y la nota.
