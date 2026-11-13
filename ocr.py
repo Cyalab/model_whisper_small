@@ -75,8 +75,11 @@ def _reducir(imagen: bytes) -> bytes:
         raise ErrorOCR(f"No se pudo abrir la imagen: {e}") from e
 
 
+MAX_TOKENS = int(os.environ.get("AURORA_VOZ_OCR_MAX_TOKENS", "512"))  # una nota es corta
+
+
 def _opciones(capas_gpu: str | int | None = None) -> dict:
-    opciones = {"temperature": 0}
+    opciones = {"temperature": 0, "num_predict": MAX_TOKENS}
     capas = CAPAS_GPU if capas_gpu is None else capas_gpu
     if str(capas).strip() != "":
         opciones["num_gpu"] = int(capas)
@@ -88,6 +91,9 @@ def _llamar_ollama(imagen_b64: str, modelo: str, url: str, capas_gpu=None) -> st
     cuerpo = json.dumps({
         "model": modelo,
         "stream": False,
+        # Sin razonamiento previo: Qwen3-VL "piensa" por omisión, gasta el tope de tokens en
+        # eso y deja vacía la respuesta. Para transcribir no hace falta.
+        "think": False,
         "messages": [{"role": "user", "content": INSTRUCCION, "images": [imagen_b64]}],
         "options": _opciones(capas_gpu),
     }).encode("utf-8")

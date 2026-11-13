@@ -61,6 +61,7 @@ def test_peticion_a_ollama():
         assert _FalsoOllama.recibido["ruta"] == "/api/chat"
         assert c["model"] == "qwen3-vl:2b" and c["stream"] is False
         assert c["options"]["temperature"] == 0
+        assert c["think"] is False and c["options"]["num_predict"] == ocr.MAX_TOKENS
         assert len(c["messages"][0]["images"]) == 1
         assert r["texto"] == NOTA and r["modelo"] == "qwen3-vl:2b" and r["ilegibles"] == 0
     finally:
