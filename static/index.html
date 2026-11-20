@@ -200,6 +200,12 @@
         </div>
       </div>
       <div class="plantilla" id="camposPlantilla"></div>
+      <!-- Capa 2: código LOINC del estudio, calculado con la proyección y el lado de arriba -->
+      <div class="lado-caja" id="loincCaja">
+        <div><b>Código LOINC del estudio:</b> <span id="loincCodigo">—</span></div>
+        <div class="evid" id="loincInfo">Se calcula con la proyección y el lado del estudio.</div>
+        <div class="ayuda" id="loincAviso" style="font-size:11px; margin:6px 0 0"></div>
+      </div>
     </div>
 
     <button id="btnGuardar" class="primario" style="width:100%; margin-top:16px">Guardar dictado</button>
@@ -561,9 +567,33 @@ function renderizarPlantilla(p) {
       '<div class="evid">' + escaparHTML(evid) + '</div></div>');
   });
   $("camposPlantilla").innerHTML = html.join("");
+  actualizarLoinc();
 }
 
-$("ladoEstudio").addEventListener("change", () => { $("ladoEstudio").dataset.manual = "1"; });
+/* Capa 2: el código LOINC se recalcula cada vez que cambian la proyección o el lado. */
+async function actualizarLoinc() {
+  const proy = document.querySelector('#camposPlantilla select[data-campo="Proyección"]');
+  try {
+    const res = await fetch("/api/loinc", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proyeccion: proy ? (proy.value || null) : null, lado: $("ladoEstudio").value || null }),
+    });
+    if (!res.ok) return;
+    const l = await res.json();
+    // La licencia de LOINC pide mostrar el código junto con su nombre LOINC y el aviso.
+    $("loincCodigo").textContent = l.loinc ? l.loinc + " — " + l.nombre_loinc : "sin código";
+    $("loincInfo").textContent = l.loinc
+      ? "De la proyección «" + l.proyeccion + "» y el lado «" + (l.lado || "—") + "». LOINC " + l.version_loinc + "."
+      : l.motivo;
+    $("loincAviso").textContent = l.aviso;
+  } catch (e) { /* sin red: el código se calcula de nuevo al guardar */ }
+}
+
+$("camposPlantilla").addEventListener("change", (ev) => {
+  if (ev.target.dataset && ev.target.dataset.campo === "Proyección") actualizarLoinc();
+});
+
+$("ladoEstudio").addEventListener("change", () => { $("ladoEstudio").dataset.manual = "1"; actualizarLoinc(); });
 
 $("ladoDicom").addEventListener("change", async () => {
   if (!estado.textoActual) return;
@@ -575,6 +605,7 @@ $("ladoDicom").addEventListener("change", async () => {
     const p = await res.json();
     estado.prellenado.lado_estudio = p.lado_estudio;
     pintarLado(p.lado_estudio, p.valores["Lado del estudio"]);
+    actualizarLoinc();
   }
 });
 
@@ -722,6 +753,14 @@ async function toggleExpediente(id) {
         '<p class="etiqueta">Marcas (' + marcas.length + ")</p>" +
         listaMarcas +
       "</div>" +
+      (exp.plantilla && exp.plantilla.estudio_loinc
+        ? '<div class="bloque">' +
+            '<p class="etiqueta">Código LOINC del estudio</p>' +
+            '<div>' + escaparHTML(exp.plantilla.estudio_loinc.loinc
+              ? exp.plantilla.estudio_loinc.loinc + " — " + exp.plantilla.estudio_loinc.nombre_loinc
+              : "Sin código: " + (exp.plantilla.estudio_loinc.motivo || "")) + "</div>" +
+          "</div>"
+        : "") +
       '<div class="bloque">' +
         '<p class="etiqueta">Fecha</p>' +
         '<div>' + escaparHTML(exp.fecha || "—") + "</div>" +

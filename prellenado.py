@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from loinc import codigo_estudio
 from marcado import marcar, plegar
 
 VERSION_REGLAS = "0.1-provisional"
@@ -241,11 +242,15 @@ def prellenar(texto: str, marcas: list[dict] | None = None, lado_dicom: str | No
             valor="Ambos", regla="R9 osteosíntesis y prótesis", conflicto=None)
     # Si hay fractura con grupo AO/OTA distinto de 31B, Garden no aplica (no se fuerza nada más).
 
+    lado = lado_estudio(lado_dicom, lado_dictado, regla_dictado, evid_dictado)
     return {
         "version_reglas": VERSION_REGLAS,
         "version_plantilla": VERSION_PLANTILLA,
         "campos": {k: v for k, v in campos.items() if k in CAMPOS_VOZ},
-        "lado_estudio": lado_estudio(lado_dicom, lado_dictado, regla_dictado, evid_dictado),
+        "lado_estudio": lado,
+        # Capa 2: código LOINC propuesto con la proyección y el lado propuestos. El definitivo
+        # se calcula al guardar, con lo que confirmó la persona.
+        "estudio_loinc": codigo_estudio(campos["Proyección"]["valor"], lado["propuesta"]),
         "valores": VALORES,
     }
 

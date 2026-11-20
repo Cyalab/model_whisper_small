@@ -19,6 +19,7 @@ from transformers import pipeline
 from datetime import datetime
 
 from marcado import marcar, version_diccionario
+from loinc import AVISO_LOINC, codigo_estudio
 from prellenado import comparar, prellenar, validar_confirmacion
 from ocr import ErrorOCR, procesar_nota
 
@@ -228,6 +229,12 @@ async def api_prellenar(datos: dict):
         raise HTTPException(422, str(e))
 
 
+@app.post("/api/loinc")
+async def api_loinc(datos: dict):
+    """Código LOINC del estudio para la proyección y el lado que tiene la plantilla en pantalla."""
+    return {**codigo_estudio(datos.get("proyeccion"), datos.get("lado")), "aviso": AVISO_LOINC}
+
+
 @app.post("/api/guardar")
 async def api_guardar(datos: GuardarRequest):
     # El prellenado se recalcula aquí, igual que las marcas automáticas: lo que se mide es
@@ -245,6 +252,9 @@ async def api_guardar(datos: GuardarRequest):
             "campos_confirmados": datos.campos_confirmados,
             "diferencias": comparar(prellenado, datos.campos_confirmados),
             "lado_estudio": {**prellenado["lado_estudio"], "decision": decision},
+            # Capa 2: el código LOINC definitivo sale de lo que confirmó la persona.
+            "estudio_loinc": codigo_estudio((datos.campos_confirmados or {}).get("Proyección"),
+                                            (decision or {}).get("eleccion")),
         }
     exp_id = f"{uuid.uuid4().hex[:8]}"
     carpeta = CARPETA_EXPEDIENTES / exp_id
