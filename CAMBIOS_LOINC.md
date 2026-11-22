@@ -6,16 +6,18 @@ Rama `loinc-estudio`, sobre `ocr-notas`. Pedido por la líder del proyecto el 19
 
 Aurora Voz asigna a cada expediente el **código LOINC del estudio** (LOINC/RSNA Radiology Playbook, versión 2.83) a partir de dos campos que la persona ya confirma en la plantilla v0.4: la **Proyección** y el **Lado del estudio**.
 
-| Proyección | Lado del estudio | Código LOINC | Nombre LOINC |
-|---|---|---|---|
-| AP de pelvis | cualquiera | 37622-8 | XR Pelvis AP |
-| AP de cadera | Izquierdo | 36582-5 | XR Hip - left AP |
-| AP de cadera | Derecho | 37726-7 | XR Hip - right AP |
-| AP de cadera | Bilateral, Sin lado o vacío | sin código | El Playbook no tiene AP bilateral de cadera; una AP de cadera necesita lado |
-| Axial (lateral) de cadera | cualquiera | sin código | **Pendiente**: los radiólogos deciden a qué vista del Playbook corresponde |
-| Otra | cualquiera | sin código | — |
+| Proyección | Lado del estudio | Código LOINC | Nombre LOINC | Correspondencia |
+|---|---|---|---|---|
+| AP de pelvis | cualquiera | 37622-8 | XR Pelvis AP | exacta |
+| AP de cadera | Izquierdo | 36582-5 | XR Hip - left AP | exacta |
+| AP de cadera | Derecho | 37726-7 | XR Hip - right AP | exacta |
+| AP de cadera | Sin lado | 36581-7 | XR Hip AP | exacta (lateralidad no especificada) |
+| AP de cadera | Bilateral | 26400-2 | XR Hip - bilateral Single view | **aproximada**: el Playbook no tiene AP bilateral de cadera |
+| AP de cadera | vacío | sin código | — | falta el lado |
+| Axial (lateral) de cadera | cualquiera | sin código | — | **Pendiente**: los radiólogos deciden a qué vista del Playbook corresponde |
+| Otra | cualquiera | sin código | — | — |
 
-La regla no adivina: si la combinación no tiene un código exacto, no se asigna ninguno y se muestra el motivo.
+**Regla 0.2 (21 nov 2026, decisión de la líder del proyecto):** igual que la plantilla de Excel v0.4, se acepta una correspondencia exacta o aproximada, y el expediente y la pantalla dicen siempre cuál fue (`correspondencia` y `nota`). Antes (regla 0.1) solo se asignaban códigos exactos. Si la combinación no tiene código, no se asigna ninguno y se muestra el motivo.
 
 ## Dónde aparece
 

@@ -581,9 +581,12 @@ async function actualizarLoinc() {
     if (!res.ok) return;
     const l = await res.json();
     // La licencia de LOINC pide mostrar el código junto con su nombre LOINC y el aviso.
-    $("loincCodigo").textContent = l.loinc ? l.loinc + " — " + l.nombre_loinc : "sin código";
+    $("loincCodigo").textContent = l.loinc
+      ? l.loinc + " — " + l.nombre_loinc + " (correspondencia " + l.correspondencia + ")"
+      : "sin código";
     $("loincInfo").textContent = l.loinc
       ? "De la proyección «" + l.proyeccion + "» y el lado «" + (l.lado || "—") + "». LOINC " + l.version_loinc + "."
+        + (l.nota ? " " + l.nota : "")
       : l.motivo;
     $("loincAviso").textContent = l.aviso;
   } catch (e) { /* sin red: el código se calcula de nuevo al guardar */ }
@@ -758,6 +761,8 @@ async function toggleExpediente(id) {
             '<p class="etiqueta">Código LOINC del estudio</p>' +
             '<div>' + escaparHTML(exp.plantilla.estudio_loinc.loinc
               ? exp.plantilla.estudio_loinc.loinc + " — " + exp.plantilla.estudio_loinc.nombre_loinc
+                + (exp.plantilla.estudio_loinc.correspondencia
+                    ? " (correspondencia " + exp.plantilla.estudio_loinc.correspondencia + ")" : "")
               : "Sin código: " + (exp.plantilla.estudio_loinc.motivo || "")) + "</div>" +
           "</div>"
         : "") +

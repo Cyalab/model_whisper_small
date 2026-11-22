@@ -18,10 +18,19 @@ def test_ap_de_pelvis_no_depende_del_lado():
 def test_ap_de_cadera_con_lado():
     assert codigo_estudio("AP de cadera", "Izquierdo")["loinc"] == "36582-5"
     assert codigo_estudio("AP de cadera", "Derecho")["loinc"] == "37726-7"
+    assert codigo_estudio("AP de cadera", "Izquierdo")["correspondencia"] == "exacta"
+
+
+def test_ap_de_cadera_sin_lado_y_bilateral_como_en_el_excel():
+    r = codigo_estudio("AP de cadera", "Sin lado")
+    assert (r["loinc"], r["correspondencia"]) == ("36581-7", "exacta")
+    r = codigo_estudio("AP de cadera", "Bilateral")
+    assert (r["loinc"], r["correspondencia"]) == ("26400-2", "aproximada")
+    assert r["nota"]
 
 
 def test_sin_codigo_explica_el_motivo():
-    for proy, lado in [("AP de cadera", None), ("AP de cadera", "Sin lado"), ("AP de cadera", "Bilateral"),
+    for proy, lado in [("AP de cadera", None), ("AP de cadera", ""),
                        ("Axial (lateral) de cadera", "Izquierdo"), ("Otra", None), (None, "Derecho")]:
         r = codigo_estudio(proy, lado)
         assert r["loinc"] is None and r["nombre_loinc"] is None
@@ -33,6 +42,7 @@ def test_toda_combinacion_de_la_plantilla_responde_sin_error():
         for lado in VALORES["Lado del estudio"] + [None, ""]:
             r = codigo_estudio(proy, lado)
             assert (r["loinc"] is None) == bool(r["motivo"])
+            assert (r["loinc"] is None) == (r["correspondencia"] is None)
             assert r["version_loinc"] == "2.83"
 
 
@@ -42,7 +52,7 @@ def test_codigos_existen_en_el_subconjunto_del_playbook():
     if not ruta.exists():
         return
     estudios = {e["loinc"]: e for e in json.loads(ruta.read_text(encoding="utf-8"))["estudios"]}
-    for codigo, nombre in CODIGOS.values():
+    for codigo, nombre, _corresp, _nota in CODIGOS.values():
         assert codigo in estudios and estudios[codigo]["nombre_loinc"] == nombre
         assert estudios[codigo]["estado"] == "ACTIVE"
 
